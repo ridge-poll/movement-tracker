@@ -7,7 +7,7 @@ from PySide6.QtGui import QImage, QPixmap, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
     QCheckBox, QSlider, QFileDialog, QMessageBox, QProgressBar, QSpinBox,
-    QTableWidget, QTableWidgetItem, QHeaderView, QSplitter, QComboBox,
+    QTableWidget, QTableWidgetItem, QHeaderView, QSplitter, QComboBox, QDockWidget,
 )
 from movement_tracker.jobs import Job
 from movement_tracker.pose_data import LANDMARK_NAMES
@@ -54,8 +54,9 @@ class MainWindow(QMainWindow):
         self.index = 0
         self.times = []
         self.current = None
-        self.comparison_windows = []
-        self.setWindowTitle("Movement Tracker · Phase 1")
+        self.analysis_panel = None
+        self.analysis_dock = None
+        self.setWindowTitle("Movement Tracker · Side-view analysis")
         self.resize(1100, 850)
         root = QWidget()
         self.setCentralWidget(root)
@@ -68,9 +69,9 @@ class MainWindow(QMainWindow):
         self.camera_index.setValue(camera_index)
         self.camera_index.setToolTip("OpenCV camera index. Built-in camera is often 0; try another if an external camera appears.")
         self.stop_button = QPushButton("Stop / Cancel")
-        self.rotations_button = QPushButton("Compare rotations…")
+        self.analysis_button = QPushButton("Analyze flip…")
         for widget in (self.open_button, self.live_button, QLabel("Camera index:"),
-                       self.camera_index, self.stop_button, self.rotations_button):
+                       self.camera_index, self.stop_button, self.analysis_button):
             sources.addWidget(widget)
         sources.addStretch()
         layout.addLayout(sources)
@@ -142,7 +143,7 @@ class MainWindow(QMainWindow):
         self.speed.currentIndexChanged.connect(self.pause)
         self.csv_button.clicked.connect(self.save_csv)
         self.video_button.clicked.connect(self.save_video)
-        self.rotations_button.clicked.connect(self.compare_rotations)
+        self.analysis_button.clicked.connect(self.open_analysis)
         self.shortcuts = []
         for key, callback in (("Space", self.toggle_play), ("Left", lambda: self.step(-1)), ("Right", lambda: self.step(1))):
             shortcut = QShortcut(QKeySequence(key), self)
@@ -165,23 +166,37 @@ class MainWindow(QMainWindow):
         self.camera_index.setEnabled(idle)
         self.stop_button.setEnabled(self.job is not None and not self.job.cancel.is_set())
         for widget in (self.play_button, self.pause_button, self.back_button, self.next_button,
-                       self.slider, self.speed, self.csv_button, self.video_button, self.rotations_button):
+                       self.slider, self.speed, self.csv_button, self.video_button, self.analysis_button):
             widget.setEnabled(ready)
+        if self.analysis_panel is not None:
+            self.analysis_panel.setEnabled(ready)
 
     def tracker(self):
         return MediaPipeTracker(self.model_path)
 
-    def compare_rotations(self):
+    def open_analysis(self):
         if self.clip is None or self.job:
             return
-        from movement_tracker.ui.rotation_window import RotationWindow
+        from movement_tracker.ui.analysis_panel import AnalysisPanel
         self.pause()
-        window = RotationWindow(self.clip.source, self.model_path, max(0, self.index - 15),
-                                min(len(self.clip.frames) - 1, self.index + 15),
-                                max_frame=len(self.clip.frames) - 1)
-        self.comparison_windows = [w for w in self.comparison_windows if w.isVisible()]
-        self.comparison_windows.append(window)
-        window.show()
+        if self.analysis_panel is None:
+            self.analysis_panel = AnalysisPanel(self)
+            self.analysis_panel.seek_time.connect(self.seek_source_time)
+            self.analysis_dock = QDockWidget("Side-view measurements", self)
+            self.analysis_dock.setWidget(self.analysis_panel)
+            self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.analysis_dock)
+        self.analysis_panel.load_clip(self.clip)
+        self.analysis_dock.show()
+        self.analysis_dock.raise_()
+        self.show_frame(self.index)
+
+    def seek_source_time(self, timestamp):
+        if self.clip is not None and self.job is None:
+            self.pause()
+            index = min(range(len(self.clip.frames)), key=lambda i: abs(
+                (self.clip.frames[i].source_timestamp if self.clip.frames[i].source_timestamp is not None
+                 else self.clip.frames[i].timestamp) - timestamp))
+            self.show_frame(index)
 
     def check_model(self):
         if self.model_path.is_file():
@@ -260,6 +275,10 @@ class MainWindow(QMainWindow):
         self.slider.setValue(index)
         self.slider.blockSignals(False)
         self.redraw()
+        if self.analysis_panel is not None:
+            pose = self.clip.frames[index]
+            self.analysis_panel.set_position(pose.source_timestamp if pose.source_timestamp is not None else pose.timestamp,
+                                             pose.frame_index)
 
     def redraw(self, *args):
         if self.current is None:
@@ -331,6 +350,8 @@ class MainWindow(QMainWindow):
                     if self.clip:
                         self.clip.close()
                     self.clip = job.result
+                    if self.analysis_panel is not None:
+                        self.analysis_panel.load_clip(self.clip)
                     self.times = [pose.timestamp for pose in self.clip.frames]
                     self.index = 0
                     self.slider.blockSignals(True)

@@ -1,8 +1,8 @@
-# Movement Tracker — Phase 1
+# Movement Tracker — Phase 2
 
-A Python desktop application for inspecting raw pose tracking during ordinary movement and acrobatics. Start with backflips; use handstands, cartwheels, jumps, walking, and squats as comparisons. This milestone provides tracking and inspection, not coaching or biomechanical analysis.
+A Python desktop application for tracking movement and measuring clean, approximately side-view front/back flips. Phase 2 adds inspectable hip-proxy trajectories, rotation, angular velocity, tuck metrics, event editing, and measurement-quality flags. It does not provide coaching or repair poses.
 
-**New: orientation experiment.** Click **Compare rotations…** after processing a clip to compare 0°/90°/180°/270° input hypotheses on the same source frames. Original Phase 1 results remain separate. See [ROTATION_EXPERIMENT.md](ROTATION_EXPERIMENT.md) for the cork benchmark launcher, coordinate conventions, manual review, and current validation limits.
+**New: side-view analysis.** Process a clip, click **Analyze flip…**, choose facing direction, and set takeoff/landing from the video. Synchronized plots and editable event suggestions appear after analysis. See [PHASE2.md](PHASE2.md) for definitions, calibration, exports, and limitations. The earlier four-orientation experiment is preserved in Git tag `rotation-experiment-v1`; its dedicated UI/scripts were removed from the current version.
 
 ## Install and run
 
@@ -37,6 +37,7 @@ python -m movement_tracker --model models/pose_landmarker_lite.task
 4. **Export CSV** includes every analyzed frame and all 33 landmarks, including blank values for frames without a pose.
 5. **Export Overlay MP4** writes a full-resolution H.264 video using the current overlay toggles. It retains every analyzed frame and relative presentation timing. **Exports are silent; audio is not copied.** Original videos are protected from overwrite. Odd dimensions receive at most one black padding pixel on the bottom/right for H.264 compatibility.
 6. **Live Camera** opens the chosen numeric camera index (usually 0 for the built-in camera). If another device appears, stop and try another index. macOS may request Camera permission for the terminal/application launching Python. Stop returns to the previously processed video. Live capture has no recording or export.
+7. **Analyze flip…** opens a measurement panel for the processed video. Set takeoff/landing explicitly, choose facing direction, then **Analyze / Recalculate**. Click plots to seek the video. Use the events/settings tab to adjust suggested events and smoothing. Analysis CSV + JSON export is separate from the unchanged raw landmark CSV export.
 
 Inference FPS measures the model call for the displayed frame, not camera FPS or end-to-end application throughput. Source FPS is the stream's reported average. The preview is unmirrored, so landmark left/right refers to the person's anatomical side.
 
@@ -93,6 +94,10 @@ video/processing.py → temporary preview cache   visualization / export
 - `export/`: CSV and timestamp-aware MP4 export.
 - `jobs.py`: cooperative background jobs and coalesced progress/results.
 - `ui/main_window.py`: playback, inspection, and job orchestration.
+- `analysis/`: versioned result schema, quality flags, time-aware derivatives, ballistic fitting, and event suggestions; consumes only `PoseFrame` data and NumPy.
+- `ui/analysis_panel.py`, `ui/analysis_plot.py`: synchronized native Qt plots and manual event controls.
+- `export/analysis_export.py`: analysis time series and JSON metadata/units/calibration sidecar.
+- `geometry.py`: reusable image rotation and inverse landmark-coordinate mapping; no multi-orientation recovery.
 
 A future iPhone implementation can reuse the data contract and processing concepts, with a native pose adapter and GUI. This is not a promise that Python/PySide code will run unchanged on iOS.
 
@@ -104,6 +109,8 @@ python -m pytest -q
 ```
 
 Tests generate short videos and check variable frame timing, portrait rotation, 240 FPS frame retention, CSV missing detections, synchronized export, cancellation, source protection, and GUI navigation. They use a deterministic fake pose backend so media/GUI failures are separable from model quality. See `VALIDATION.md` for the actual checks performed on this build and the manual movement checklist.
+
+Additional synthetic skeleton tests verify known rotation signs and magnitudes, irregular timestamp handling, 900°/s motion at 30 FPS, angular acceleration, noise filtering, parabolic flight/calibration, event provenance, and quality breaks. They do not establish real-footage measurement accuracy.
 
 ## Troubleshooting
 

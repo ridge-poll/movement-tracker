@@ -13,20 +13,17 @@ def prominence(landmarks) -> float:
     return (max(xs) - min(xs)) * (max(ys) - min(ys))
 
 class MediaPipeTracker:
-    def __init__(self, model_path: Path, mode="video"):
-        if mode not in ("video", "image"):
-            raise ValueError("Pose mode must be 'video' or 'image'.")
+    def __init__(self, model_path: Path):
         import mediapipe as mp
         from mediapipe.tasks import python
         from mediapipe.tasks.python import vision
         self._mp = mp
-        self._mode = mode
         self._last_ms = -1
         self._model = vision.PoseLandmarker.create_from_options(
             vision.PoseLandmarkerOptions(
                 base_options=python.BaseOptions(model_asset_path=str(model_path),
                                                 delegate=python.BaseOptions.Delegate.CPU),
-                running_mode=vision.RunningMode.VIDEO if mode == "video" else vision.RunningMode.IMAGE,
+                running_mode=vision.RunningMode.VIDEO,
                 num_poses=3,
                 min_pose_detection_confidence=0.5,
                 min_pose_presence_confidence=0.5,
@@ -40,10 +37,7 @@ class MediaPipeTracker:
         self._last_ms = milliseconds
         image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=np.ascontiguousarray(rgb))
         start = perf_counter()
-        if getattr(self, "_mode", "video") == "image":
-            result = self._model.detect(image)
-        else:
-            result = self._model.detect_for_video(image, milliseconds)
+        result = self._model.detect_for_video(image, milliseconds)
         elapsed = perf_counter() - start
         landmarks = {}
         if result.pose_landmarks:

@@ -1,59 +1,61 @@
-# Build validation
+# Phase 2 validation
 
-Phase 2 adds a separate rotation experiment: **33 combined tests pass**. See `ROTATION_EXPERIMENT.md` for its validation and the unresolved real-model runtime limitation. The Phase 1 results below describe the original milestone.
+The current test suite covers the tracking/media foundation and the side-view measurement layer. See `PHASE2.md` for definitions and assumptions. The pre-cleanup experiment is preserved at Git tag `rotation-experiment-v1` (commit `227b9bb`).
 
-## Automated checks
+**Result: 40 tests passed on Python 3.11.15.** `git diff --check` is clean. No new runtime dependencies were added for analysis or plotting.
 
-Result: **16 tests passed** on Python 3.11.15. `pip check` reported no broken requirements. Direct dependency versions are recorded in `requirements-tested.txt`.
+## Synthetic and automated checks
 
-The test suite covers:
+The analysis tests use an artificial skeleton with a known image scale and parabolic hip path, exact source timestamps with a nonzero origin, configurable rotation, configurable temporal spacing, and optional landmark noise.
 
-- Full-clip processing with synthetic variable-frame-rate H.264 video; no missing frames.
-- CSV columns for all 33 landmarks; blank values and an explicit flag for undetected frames.
-- Overlay H.264 export decoded again to verify frame count, variable timestamps, final frame duration, and changed overlay pixels.
-- Pixel orientation for +90°, −90°, and 180° display rotations.
-- All frames retained from a 240 FPS source.
-- Cancelled export preserves an existing destination and removes its partial file.
-- Refusal to overwrite or export against a changed source.
-- Rendering does not modify source pixels or raw pose data.
-- Processing cancellation.
-- GUI frame stepping, bounds, scrubbing, play/pause, and no-pose status in Qt's offscreen mode.
-- Backend adapter selection of the largest pose, all landmarks, precise stored timestamps despite backend millisecond quantization, and missing detections.
-- Coalesced worker results and surfaced errors.
+They verify:
 
-The UI was rendered offscreen and visually inspected at 1100×850. This checks layout, not interactive native camera access.
+- Positive backward and negative forward rotation for both facing directions.
+- Zero cumulative rotation at takeoff, multiple angle wraps, and a known 720° total.
+- Exact constant velocity, time-varying angular velocity, and 900°/s rotation sampled at 30 FPS.
+- Nonuniform timestamps used directly for derivatives and ballistic fitting.
+- Expected parabola apex, gravitational-curvature scale, and calibrated/airtime rise.
+- Light local-polynomial noise reduction with raw landmarks and derivatives retained.
+- Low-quality torso, missing pose, timestamp gap, and discrete orientation error flags.
+- Withholding cumulative rotation after a discontinuity rather than silently repairing it.
+- Authoritative manual event times, including between-frame times and manually unset events.
+- Tuck hysteresis ordering and explicit calibration/height disagreement.
+- Rejection of nonmonotonic source times and explicit estimated-time flags.
+- CSV/JSON units, event provenance, smoothing metadata, null values, and paired export rollback.
+- Source-time synchronization between video scrubbing and plot seeks; settings changes invalidate export until recalculation.
+- Retained image/landmark rotation geometry on non-square images.
 
-## Real-model check: blocked in this environment
+The original tests also verify variable-rate decoding/export, portrait display rotation, 240 FPS frame retention, raw CSV missing-detection rows, source protection, cancellation, rendering immutability, and basic GUI navigation.
 
-The official Full model downloaded successfully. A real MediaPipe inference attempt using Google's public pose sample could not initialize the macOS graphics context in this restricted execution environment:
+The native Qt plots, settings panel, and integrated main window were rendered offscreen and visually inspected using **synthetic data**. These screenshots are layout checks, not measurements of the user's videos.
 
-- MediaPipe 0.10.35 aborted natively in `DrishtiMetalHelper` with `Service is unavailable`, even with the CPU delegate explicitly selected.
-- MediaPipe 0.10.32 returned a catchable `kGpuService / Could not create an NSOpenGLPixelFormat` error. The deliverable pins this version so that this initialization failure can be shown by the GUI instead of aborting it.
+## Real footage inspection
 
-No claim of successful real pose inference, 30 FPS throughput, live-camera operation, or backflip tracking quality is made by these tests. Run the app in a normal logged-in macOS desktop terminal to perform those checks. The Tasks API integration is implemented, but this environment cannot establish whether it initializes successfully in your desktop session.
+Decoded and visually inspected locally:
 
-## Manual movement evaluation
+| Clip | Oriented dimensions | Decoded frames | Reported average FPS | Last relative frame time |
+|---|---:|---:|---:|---:|
+| `spidey_back.MOV` | 1080 × 1920 | 80 | 25.676 | 2.633 s |
+| `dub_red_thing.MOV` | 1080 × 1920 | 156 | 30.000 | 5.167 s |
 
-Start with one athlete fully visible, a fixed camera, and the source files preserved. Use actual source metadata; do not convert to 30 FPS or otherwise drop frames just for this evaluation.
+Container frame hints and average FPS can differ from decoded content (the first file advertises 95 frames). Analysis therefore uses decoded frames and their actual source PTS, never assumed `1/FPS` intervals.
 
-| Test | Inspect |
-|---|---|
-| Standing, walking, arms raised, squats | Baseline detection, stability, left/right correctness |
-| Jumps, spins, kicks | Blur, fast movement, limb swaps |
-| Handstands and cartwheels | Inversion, overlap, reacquisition |
-| Backflips (primary test) | Takeoff through landing: inversion, tuck, blur, missing pose, incorrect confident landmarks |
-| Partial body leaving the frame | Missing joints, stale-looking estimates, recovery |
-| Background person | Prominence selection switches |
+Visual review windows: approximately 1.0–1.8 seconds for `spidey_back`, and 1.0–2.0 seconds for `dub_red_thing`. These are not exact event labels. The double-back footage has a different landing surface; equal-COM-height airtime assumptions should be inspected rather than presumed.
 
-For each clip, note the source filename, failing frame ranges, failure type, confidence behavior, and whether tracking recovers. These are manual notes outside the application; no annotation system is implemented. Compare the overlay with the actual pixels rather than treating confidence as ground truth.
+**Real model-derived kinematic accuracy remains unverified here.** A fresh MediaPipe 0.10.32 initialization attempt failed with `kGpuService / Could not create an NSOpenGLPixelFormat` in this restricted environment. No double-back 720° measurement, real peak velocity, or real calibrated height is claimed. The user has reported that Phase 1 tracking works in the normal desktop session.
 
-Also verify on the target Mac:
+## Desktop acceptance check
 
-1. Grant camera access and select the built-in camera index.
-2. Confirm live latency does not accumulate during rapid movement; observe inference FPS.
-3. Stop camera, open a real portrait MOV, wait for processing, and inspect orientation.
-4. Scrub back and forth and step around a failed backflip frame; confirm exact overlay alignment.
-5. Export CSV and silent overlay MP4. Open the MP4 in QuickTime and check orientation, duration, overlay, and smooth playback.
-6. Close the window during processing/export and confirm it exits after the current operation stops.
+1. Relaunch the app, process `spidey_back.MOV`, and open Analyze flip.
+2. Choose facing direction from the displayed image. Set takeoff and landing by frame stepping; do not accept the rough windows above as precise annotations.
+3. Inspect the measured hip proxy against its fit, RMSE, and red quality bands.
+4. Check cumulative rotation sign and trajectory. For the double-back clip, expect approximately two turns, allowing endpoint tilt; do not force the output to 720°.
+5. Compare raw versus smoothed angular velocity. Adjust the light smoothing window and observe how the reported peak changes.
+6. Review/correct tuck start, maximum tuck, opening, and apex events.
+7. If using athlete-height calibration, record the standing reference span and source. Inspect disagreements between the two calibrations and airtime-derived rise.
+8. Click plots and scrub video in both directions; verify all cursors stay synchronized.
+9. Export CSV + JSON and confirm event source times, units, calibration assumptions, smoothing, quality flags, and analysis version are retained.
 
-Stop after this tracking-quality evaluation. Coaching, derived kinematics, scoring, filtering, and trick recognition remain out of scope.
+## Cork benchmark preservation
+
+`benchmarks/cork/` contains eight original source frames with timestamps/source hash and an explicit pending-review manifest. No exported labels or pose-candidate results were found; none were synthesized. The full old experiment code remains recoverable via its Git tag.

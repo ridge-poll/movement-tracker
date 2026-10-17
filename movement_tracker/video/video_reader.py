@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import av
 import numpy as np
+from movement_tracker.geometry import rotate_image
 
 @dataclass
 class DecodedFrame:
@@ -53,7 +54,7 @@ class VideoReader:
             if abs(rotation - turns * 90) > 0.1:
                 raise ValueError(f"Unsupported display rotation {rotation}°; use a standard 90° orientation.")
             if turns % 4:
-                rgb = np.ascontiguousarray(np.rot90(rgb, turns))
+                rgb = rotate_image(rgb, (turns * 90) % 360)
             yield DecodedFrame(rgb, index, timestamp, raw, estimated, duration)
 
     def close(self):

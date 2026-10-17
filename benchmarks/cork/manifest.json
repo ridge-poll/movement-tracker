@@ -1,0 +1,57 @@
+{
+  "source": "/Users/ridgepoll/Documents/Codex/2026-10-17/videos/darkcork.MOV",
+  "source_sha256": "007b871334b7c3816fe896afd458905121be830cbe3805ec7e8061b23b8f46af",
+  "known_issue": "User-reported anatomical misidentification during inverted cork",
+  "experiment_tag": "rotation-experiment-v1",
+  "labels_and_candidate_results_available": false,
+  "frames": [
+    {
+      "frame": 18,
+      "source_timestamp": 0.6016666666666667,
+      "review_status": "pending",
+      "pose_results": null
+    },
+    {
+      "frame": 27,
+      "source_timestamp": 0.9016666666666666,
+      "review_status": "pending",
+      "pose_results": null
+    },
+    {
+      "frame": 30,
+      "source_timestamp": 1.0016666666666667,
+      "review_status": "pending",
+      "pose_results": null
+    },
+    {
+      "frame": 33,
+      "source_timestamp": 1.1016666666666666,
+      "review_status": "pending",
+      "pose_results": null
+    },
+    {
+      "frame": 36,
+      "source_timestamp": 1.2016666666666667,
+      "review_status": "pending",
+      "pose_results": null
+    },
+    {
+      "frame": 39,
+      "source_timestamp": 1.3016666666666667,
+      "review_status": "pending",
+      "pose_results": null
+    },
+    {
+      "frame": 45,
+      "source_timestamp": 1.5016666666666667,
+      "review_status": "pending",
+      "pose_results": null
+    },
+    {
+      "frame": 48,
+      "source_timestamp": 1.6016666666666666,
+      "review_status": "pending",
+      "pose_results": null
+    }
+  ]
+}
