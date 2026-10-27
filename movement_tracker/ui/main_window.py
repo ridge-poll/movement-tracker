@@ -1,9 +1,8 @@
 from bisect import bisect_right
 from pathlib import Path
 from time import perf_counter
-import numpy as np
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QImage, QPixmap, QKeySequence, QShortcut
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
     QCheckBox, QSlider, QFileDialog, QMessageBox, QProgressBar, QSpinBox,
@@ -14,33 +13,13 @@ from movement_tracker.pose_data import LANDMARK_NAMES
 from movement_tracker.tracking.mediapipe_tracker import MediaPipeTracker
 from movement_tracker.video.processing import process_video
 from movement_tracker.video.camera import run_camera
-from movement_tracker.visualization.skeleton_renderer import OverlayOptions, render
+from movement_tracker.visualization.skeleton_renderer import OverlayOptions
 from movement_tracker.export.csv_export import export_csv
 from movement_tracker.export.video_export import export_video
 
-class VideoView(QLabel):
-    def __init__(self):
-        super().__init__("Open a video or start the live camera")
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setMinimumSize(320, 320)
-        self.setStyleSheet("background: #151a20; color: #c5cdd6; border-radius: 6px;")
-        self.image = None
-
-    def set_image(self, rgb):
-        rgb = np.ascontiguousarray(rgb)
-        h, w = rgb.shape[:2]
-        self.image = QImage(rgb.data, w, h, rgb.strides[0], QImage.Format.Format_RGB888).copy()
-        self.refresh()
-
-    def refresh(self):
-        if self.image is not None:
-            self.setPixmap(QPixmap.fromImage(self.image).scaled(
-                self.size(), Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation))
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self.refresh()
+from .pose_editor import VideoView
+from movement_tracker.pose_corrections import corrections_for
+from dataclasses import replace
 
 class MainWindow(QMainWindow):
     def __init__(self, model_path, camera_index=0):
@@ -90,7 +69,7 @@ class MainWindow(QMainWindow):
             for column, text in enumerate((name, "—", "—")):
                 self.table.setItem(row, column, QTableWidgetItem(text))
         inspection_layout.addWidget(self.table)
-        note = QLabel("Green: confidence ≥ 0.5\nAmber: low confidence\nConfidence = min(visibility, presence).\nHigh confidence does not guarantee accuracy.")
+        note = QLabel("Green: confidence ≥ 0.5\nAmber: low confidence\nPurple: manually placed XY\nConfidence = min(visibility, presence).\nHigh confidence does not guarantee accuracy.")
         note.setWordWrap(True)
         inspection_layout.addWidget(note)
         splitter.addWidget(inspector)
@@ -106,6 +85,35 @@ class MainWindow(QMainWindow):
             toggles.addWidget(box)
         toggles.addStretch()
         layout.addLayout(toggles)
+        toggles = QHBoxLayout()
+        self.edit_button = QPushButton("Edit Pose")
+        self.edit_button.setCheckable(True)
+        self.undo_button = QPushButton("Undo")
+        self.reset_button = QPushButton("Reset Frame")
+        self.recalculate_button = QPushButton("Recalculate")
+        self.landmark_choice = QComboBox()
+        self.landmark_choice.addItem("Grab nearest landmark", None)
+        for name in LANDMARK_NAMES:
+            self.landmark_choice.addItem(name, name)
+        self.landmark_choice.setToolTip("Choose a landmark to disambiguate overlapping points, then drag it")
+        self.landmark_choice.currentIndexChanged.connect(self.select_exact_landmark)
+        self.edit_button.toggled.connect(self.edit_toggled)
+        self.undo_button.clicked.connect(lambda: self.change_correction("undo"))
+        self.reset_button.clicked.connect(lambda: self.change_correction("reset"))
+        self.recalculate_button.clicked.connect(self.recalculate)
+        self.view.landmarks_moved.connect(self.move_landmarks)
+        for widget in (self.edit_button, self.undo_button, self.reset_button, self.recalculate_button, self.landmark_choice):
+            toggles.addWidget(widget)
+        toggles.addStretch()
+        layout.addLayout(toggles)
+        selection_tools = QHBoxLayout()
+        self.group_extremities = QCheckBox("Group hands / feet")
+        self.group_extremities.setChecked(True)
+        self.group_extremities.toggled.connect(self.set_grouping)
+        selection_tools.addWidget(self.group_extremities)
+        selection_tools.addWidget(QLabel("White rings: selected · Shift-click: toggle point · Drag empty image: select area"))
+        selection_tools.addStretch()
+        layout.addLayout(selection_tools)
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.valueChanged.connect(self.seek)
         layout.addWidget(self.slider)
@@ -118,7 +126,7 @@ class MainWindow(QMainWindow):
         for label, value in (("0.25×", .25), ("0.5×", .5), ("1×", 1), ("2×", 2)):
             self.speed.addItem(label, value)
         self.speed.setCurrentIndex(2)
-        self.csv_button = QPushButton("Export CSV")
+        self.csv_button = QPushButton("Export Raw CSV")
         self.video_button = QPushButton("Export Overlay MP4")
         for widget in (self.play_button, self.pause_button, self.back_button,
                        self.next_button, self.speed, self.csv_button, self.video_button):
@@ -168,8 +176,57 @@ class MainWindow(QMainWindow):
         for widget in (self.play_button, self.pause_button, self.back_button, self.next_button,
                        self.slider, self.speed, self.csv_button, self.video_button, self.analysis_button):
             widget.setEnabled(ready)
+        for widget in (self.edit_button, self.recalculate_button, self.landmark_choice):
+            widget.setEnabled(ready)
+        store = corrections_for(self.clip) if self.clip else None
+        frame = self.clip.frames[self.index].frame_index if self.clip else 0
+        self.undo_button.setEnabled(bool(ready and store.history.get(frame)))
+        self.reset_button.setEnabled(bool(ready and store.overrides.get(frame)))
         if self.analysis_panel is not None:
             self.analysis_panel.setEnabled(ready)
+
+    def edit_toggled(self, enabled):
+        self.pause()
+        self.redraw()
+        if enabled:
+            self.status.setText("Select / drag landmarks; white rings show selection, purple marks manual XY. Confidence stays raw; manual points use analysis weight 1. Recalculate when done.")
+
+    def select_exact_landmark(self):
+        self.view.selected = self.landmark_choice.currentData()
+        self.view.selection.clear()
+        self.view.update()
+
+    def set_grouping(self, enabled):
+        self.view.group_extremities = enabled
+        self.view.selection.clear()
+        self.view.update()
+
+    def move_landmarks(self, positions):
+        if self.clip is not None and self.job is None:
+            if corrections_for(self.clip).move_many(self.clip.frames[self.index], positions):
+                self.correction_changed()
+
+    def move_landmark(self, name, x, y):
+        if self.clip is not None and self.job is None:
+            if corrections_for(self.clip).move(self.clip.frames[self.index], name, x, y):
+                self.correction_changed()
+
+    def change_correction(self, operation):
+        if self.clip is not None and self.job is None:
+            if getattr(corrections_for(self.clip), operation)(self.clip.frames[self.index].frame_index):
+                self.correction_changed()
+
+    def correction_changed(self):
+        if self.analysis_panel is not None:
+            self.analysis_panel.settings_changed()
+        self.redraw()
+        self.update_controls()
+        self.status.setText("Pose correction changed · Recalculate to refresh measurements, plots and events")
+
+    def recalculate(self):
+        self.open_analysis()
+        if self.analysis_panel is not None and self.job is None:
+            self.analysis_panel.recalculate()
 
     def tracker(self):
         return MediaPipeTracker(self.model_path)
@@ -206,6 +263,7 @@ class MainWindow(QMainWindow):
 
     def begin_job(self, kind, function):
         self.pause()
+        self.edit_button.setChecked(False)
         self.job_kind = kind
         self.job = Job(function)
         self.progress.setRange(0, 0)
@@ -249,6 +307,7 @@ class MainWindow(QMainWindow):
             return
         if self.index >= len(self.clip.frames) - 1:
             self.show_frame(0)
+        self.edit_button.setChecked(False)
         self.play_start = perf_counter()
         self.play_origin = self.times[self.index]
         self.playing = True
@@ -284,8 +343,12 @@ class MainWindow(QMainWindow):
         if self.current is None:
             return
         rgb, pose = self.current
-        self.view.set_image(render(rgb, pose, self.options()))
+        if self.clip is not None and self.job_kind != "camera":
+            pose = corrections_for(self.clip).apply(pose)
+        self.view.set_frame(rgb, pose, self.options(), self.edit_button.isChecked() and self.job is None)
+        self.update_controls()
         for row, name in enumerate(LANDMARK_NAMES):
+            self.table.item(row, 0).setText(name + (" [manual]" if name in pose.manual_landmarks else ""))
             point = pose.landmarks.get(name)
             for column, field in ((1, "visibility"), (2, "presence")):
                 value = getattr(point, field) if point else None
@@ -320,7 +383,8 @@ class MainWindow(QMainWindow):
         target = self.destination("Export overlay video (silent)", ".mp4", "MP4 (*.mp4)")
         if target:
             options = self.options()
-            self.begin_job("video", lambda job: export_video(self.clip, target, options, job.cancel, job.update))
+            corrected_clip = replace(self.clip, frames=[corrections_for(self.clip).apply(f) for f in self.clip.frames])
+            self.begin_job("video", lambda job: export_video(corrected_clip, target, options, job.cancel, job.update))
 
     def tick(self):
         if self.job:

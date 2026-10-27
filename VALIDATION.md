@@ -2,7 +2,7 @@
 
 The current test suite covers the tracking/media foundation and the side-view measurement layer. See `PHASE2.md` for definitions and assumptions. The pre-cleanup experiment is preserved at Git tag `rotation-experiment-v1` (commit `227b9bb`).
 
-**Result: 40 tests passed on Python 3.11.15.** `git diff --check` is clean. No new runtime dependencies were added for analysis or plotting.
+**Result: 50 tests passed on Python 3.11.15.** `git diff --check` is clean. No new runtime dependencies were added for analysis or plotting.
 
 ## Synthetic and automated checks
 
@@ -59,3 +59,16 @@ Visual review windows: approximately 1.0–1.8 seconds for `spidey_back`, and 1.
 ## Cork benchmark preservation
 
 `benchmarks/cork/` contains eight original source frames with timestamps/source hash and an explicit pending-review manifest. No exported labels or pose-candidate results were found; none were synthesized. The full old experiment code remains recoverable via its Git tag.
+
+
+Manual-correction validation: frame-local non-destructive overrides and undo/reset;
+synthetic damaged shoulders corrected to recover 720° rotation; preserved raw low
+confidence with explicit manual placement weight; CSV/JSON correction provenance;
+portrait and landscape letterbox drag coordinates with one commit per gesture; stale
+analysis invalidation and event-setting retention. Native MediaPipe inference was not
+rerun for this change; actual footage should still receive manual desktop inspection.
+
+Group editing validation: click/Shift-click selection, exact marquee selection,
+anatomical hand/foot selection and individual-point mode, selection-only clicks,
+frame-switch selection clearing, equal-displacement group movement with one undo,
+shape-preserving boundary clamping, and atomic rejection of invalid batch coordinates.

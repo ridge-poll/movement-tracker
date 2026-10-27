@@ -18,6 +18,8 @@ def render(rgb, pose, options=OverlayOptions()):
         if math.isfinite(p.x) and math.isfinite(p.y) and 0 <= p.x <= 1 and 0 <= p.y <= 1:
             points[name] = (round(p.x * (w - 1)), round(p.y * (h - 1)))
     def color(name):
+        if name in pose.manual_landmarks:
+            return (235, 100, 255)
         score = pose.landmarks[name].confidence
         return (255, 172, 65) if score is not None and score < 0.5 else (62, 230, 180)
     if options.skeleton:

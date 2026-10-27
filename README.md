@@ -128,3 +128,46 @@ Additional synthetic skeleton tests verify known rotation signs and magnitudes, 
 - [PyAV video frame and stream API](https://pyav.basswood.io/docs/stable/api/video.html)
 
 Google's model remains an upstream artifact, rather than an original asset of this project. Review upstream terms before redistributing a packaged application.
+
+## Manual pose correction
+
+Pause on a problematic frame, click **Edit Pose**, and drag the incorrect landmark.
+Purple points mark manual XY placements. Hover to identify a point; use the landmark
+selector when left/right points overlap. Frame stepping and scrubbing retain edits.
+**Undo** reverses the last change on this frame; **Reset Frame** removes its overrides
+(and can itself be undone). Corrections never propagate to neighboring frames.
+
+Click **Recalculate** to regenerate all kinematics, fits, automatic events, plots and
+summary using the corrected sequence. Set takeoff, landing and facing direction first
+in the analysis panel if you have not already. Manual event choices remain intact.
+Previous analysis is marked stale after any edit, undo or reset and cannot be exported
+until recalculated.
+
+Raw `PoseFrame` objects remain unchanged. Only edited XY coordinates are overridden;
+Z, visibility, presence, timestamps and untouched landmarks remain exactly as detected.
+Manual positions use analysis weight 1, explicitly representing user placement rather
+than model confidence. Confidence inspection continues to show original detector values.
+Manual placement does not guarantee accurate 3D motion or eliminate side-view assumptions.
+
+Analysis CSV quality flags identify each manually adjusted landmark on its frame.
+The JSON sidecar records original and corrected normalized XY, source timestamps,
+frame indices, correction revision and weighting policy. **Export Raw CSV** still
+exports original detections. Overlay MP4 uses corrected poses, with purple edited
+points when landmark points are enabled. Session corrections remain in memory until
+another video replaces the clip or the app closes; session reopening is not implemented.
+
+### Selecting and moving groups
+
+In Edit Pose, click a point to select it; white rings show the current selection.
+Shift-click adds or removes an individual point. Drag on empty image space to marquee
+exactly the points inside the rectangle (Shift-marquee adds to the selection).
+Click empty image space to clear selection. Drag any selected point to move the
+whole selection by the same image-space displacement. At image edges, the entire
+group stops together without changing its shape. Each group movement is one Undo step.
+
+**Group hands / feet** is enabled by default: clicking a hand selects that side's
+wrist, thumb, index and pinky; clicking a foot selects its ankle, heel and foot index.
+Turn the checkbox off to start an individual selection, or use the exact landmark
+selector to isolate an overlapping point. Shift-click and marquee always operate on
+individual points, without expanding anatomical groups. Selection clears when changing
+frames or leaving editing; corrections remain stored for the loaded video.

@@ -25,7 +25,7 @@ def test_export_units_exact_events_nulls_and_metadata(tmp_path):
     assert payload["units"]["angular_velocity_deg_s"] == "deg/s"
     assert payload["smoothing"]["method"] == "local_polynomial_on_actual_timestamps"
     assert payload["export"]["csv_sha256"] == hashlib.sha256(csv_path.read_bytes()).hexdigest()
-    assert payload["analysis_version"] == "2.0.0"
+    assert payload["analysis_version"] == "2.1.0"
 
 def test_export_pair_rolls_back_if_second_replace_fails(tmp_path, monkeypatch):
     from movement_tracker.export import analysis_export

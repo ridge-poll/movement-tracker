@@ -41,6 +41,8 @@ def _point(frame, name):
         return None
     q = p.confidence
     q = float(np.clip(q, 0, 1)) if q is not None and math.isfinite(q) else 0.0
+    if name in frame.manual_landmarks:
+        q = 1.0  # User placement weight, not detector confidence.
     return np.array([p.x * frame.width, -p.y * frame.height]), q
 
 def _midpoint(frame, joint, threshold):
@@ -64,7 +66,7 @@ def analyze(frames, params: AnalysisParameters, source_metadata=None) -> Analysi
     _validate(frames, p, t)
     n = len(frames)
     flight = (t >= p.takeoff) & (t <= p.landing)
-    flags = [set() for _ in frames]
+    flags = [{"manual_landmark:" + name for name in frame.manual_landmarks} for frame in frames]
     warnings = ["Hip midpoint is a body-center proxy, not center of mass.",
                 "Assumed side view: camera tilt, perspective, and out-of-plane rotation affect these measurements."]
     raw = np.full(n, np.nan)
@@ -315,4 +317,6 @@ def analyze(frames, params: AnalysisParameters, source_metadata=None) -> Analysi
                            "vertical_axis": "upward pixels; negative source image y", "body_axis": "shoulder midpoint toward hip midpoint",
                            "rotation_sign": "backward positive; forward negative; facing is fixed for the clip",
                            "unwrapped_orientation": "segment-local after quality breaks; see orientation_segment",
-                           "pose_correction_applied": False, "body_center_proxy": "visibility-weighted hip midpoint, not COM"})
+                           "pose_correction_applied": any(f.manual_landmarks for f in frames),
+                           "manual_landmarks_by_frame": {str(f.frame_index): list(f.manual_landmarks) for f in frames if f.manual_landmarks},
+                           "manual_quality_policy": "User-placed XY has analysis weight 1; original detector confidence and Z are unchanged", "body_center_proxy": "visibility-weighted hip midpoint, not COM"})

@@ -1,6 +1,6 @@
 # Phase 2: inspectable side-view flip measurements
 
-The target is clean, approximately side-view front/back flips, especially doubles. This version measures already-tracked motion. It does not implement coaching, reference trajectories, temporal pose correction, candidate selection, or four-orientation recovery.
+The target is clean, approximately side-view front/back flips, especially doubles. This version measures already-tracked motion. It does not implement coaching, reference trajectories, automatic temporal pose correction, candidate selection, or four-orientation recovery.
 
 ## Start
 
@@ -22,7 +22,7 @@ Click a plot to seek the nearest source frame. The video scrubber and frame butt
 
 ## Time and data contract
 
-`analysis.analyze(pose_frames, AnalysisParameters(...))` depends on standardized `PoseFrame` data and NumPy, not MediaPipe or Qt. `AnalysisResult.analysis_version` is **2.0.0**. It contains:
+`analysis.analyze(pose_frames, AnalysisParameters(...))` depends on standardized `PoseFrame` data and NumPy, not MediaPipe or Qt. `AnalysisResult.analysis_version` is **2.1.0**. It contains:
 
 - Source timestamps and frame indices.
 - Derived time series and per-frame quality flags.
@@ -96,7 +96,7 @@ git archive --format=zip --output=/tmp/rotation-experiment-v1.zip rotation-exper
 
 The former comparison UI, launcher, experiment runner, report code, and experiment tests are removed from the current tree. General rotation/coordinate geometry remains in `geometry.py`, with tests, and is reused for video display rotation.
 
-`benchmarks/cork/` retains selected original frames, source timestamps/hash, the known reported failure, and the recovery tag. No exported human labels or candidate JSON results were found in the supplied workspace, so these entries explicitly remain review-pending; no labels or results were fabricated. Add those original results here if they become available. Cork/TDR correction is not part of Phase 2.
+`benchmarks/cork/` retains selected original frames, source timestamps/hash, the known reported failure, and the recovery tag. No exported human labels or candidate JSON results were found in the supplied workspace, so these entries explicitly remain review-pending; no labels or results were fabricated. Add those original results here if they become available. Automatic Cork/TDR recovery is not part of Phase 2.
 
 ## Real footage status
 

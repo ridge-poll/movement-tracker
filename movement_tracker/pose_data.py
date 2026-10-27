@@ -44,6 +44,7 @@ class PoseFrame:
     source_timestamp: float | None = None
     timestamp_estimated: bool = False
     inference_seconds: float = 0.0
+    manual_landmarks: tuple[str, ...] = ()
 
     @property
     def confidence(self) -> float | None:

@@ -11,6 +11,7 @@ from movement_tracker.analysis.models import EVENT_NAMES
 from movement_tracker.analysis.kinematics import source_times
 from movement_tracker.export.analysis_export import export_analysis
 from .analysis_plot import AnalysisPlot
+from movement_tracker.pose_corrections import corrections_for
 
 class AnalysisPanel(QWidget):
     seek_time = Signal(float)
@@ -187,7 +188,7 @@ class AnalysisPanel(QWidget):
         if not self.loading and self.result is not None:
             self.stale = True
             self.export_button.setEnabled(False)
-            self.state.setText("Settings changed. Displayed plots are the previous result; recalculate before exporting.")
+            self.state.setText("Settings or pose changed. Displayed plots are the previous result; recalculate before exporting.")
 
     def set_event_from_video(self, name):
         if self.current_time is None:
@@ -240,8 +241,9 @@ class AnalysisPanel(QWidget):
             return
         try:
             parameters = self.parameters()
-            result = analyze(self.clip.frames, parameters,
-                             {"source_path": str(self.clip.source.resolve()), "source_size": self.clip.source_size,
+            corrections = corrections_for(self.clip)
+            result = analyze([corrections.apply(f) for f in self.clip.frames], parameters,
+                             {**corrections.metadata(self.clip.frames), "source_path": str(self.clip.source.resolve()), "source_size": self.clip.source_size,
                               "source_mtime_ns": self.clip.source_mtime_ns})
         except Exception as error:
             QMessageBox.warning(self, "Analysis needs attention", str(error))

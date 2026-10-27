@@ -1,7 +1,7 @@
 """Portable analysis schema. No backend or GUI types."""
 from dataclasses import dataclass, field
 
-ANALYSIS_VERSION = "2.0.0"
+ANALYSIS_VERSION = "2.1.0"
 EVENT_NAMES = ("takeoff", "apex", "tuck_start", "maximum_tuck", "opening", "landing")
 
 @dataclass(frozen=True)
