@@ -23,7 +23,9 @@ def render(rgb, pose, options=OverlayOptions()):
         score = pose.landmarks[name].confidence
         return (255, 172, 65) if score is not None and score < 0.5 else (62, 230, 180)
     if options.skeleton:
-        for a, b in CONNECTIONS:
+        rough_edges = (("head", "near_shoulder"), ("near_shoulder", "near_hip"),
+                       ("near_hip", "near_knee"), ("near_knee", "near_ankle"))
+        for a, b in CONNECTIONS + rough_edges:
             if a in points and b in points:
                 c = (255, 172, 65) if color(a) == (255, 172, 65) or color(b) == (255, 172, 65) else color(a)
                 cv2.line(result, points[a], points[b], c, thickness, cv2.LINE_AA)

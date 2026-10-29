@@ -21,7 +21,7 @@ def test_frame_stepping_scrubbing_and_controls(tmp_path):
     assert window.play_button.isEnabled()
     window.step(1)
     assert window.index == 1
-    assert "no pose detected" in window.metrics.text()
+    assert "N/A" in window.metrics.text()
     window.slider.setValue(3)
     assert window.index == 3
     window.step(1)

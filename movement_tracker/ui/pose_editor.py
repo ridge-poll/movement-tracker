@@ -10,6 +10,7 @@ from movement_tracker.visualization.skeleton_renderer import render
 class VideoView(QLabel):
     landmark_moved = Signal(str, float, float)
     landmarks_moved = Signal(object)
+    image_clicked = Signal(float, float)
 
     def __init__(self):
         super().__init__("Open a video or start the live camera")
@@ -27,6 +28,7 @@ class VideoView(QLabel):
         self.marquee = None
         self.preview_pose = None
         self.press_position = None
+        self.placing = False
         self.pending = {}
 
     def set_frame(self, rgb, pose, options, editing=False):
@@ -97,6 +99,11 @@ class VideoView(QLabel):
         if not self.editing or event.button() != Qt.MouseButton.LeftButton:
             return super().mousePressEvent(event)
         if not self.inside_image(event.position()):
+            return
+        if self.placing:
+            ox, oy, w, h = self.image_geometry()
+            self.image_clicked.emit((event.position().x()-ox)/w, (event.position().y()-oy)/h)
+            event.accept()
             return
         self.press_position = QPointF(event.position())
         self.pending = {}

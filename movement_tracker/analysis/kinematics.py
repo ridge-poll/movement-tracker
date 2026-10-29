@@ -11,7 +11,7 @@ def source_times(frames):
 def _validate(frames, p, t):
     if len(frames) < 3 or not np.isfinite(t).all() or np.any(np.diff(t) <= 0):
         raise ValueError("Analysis needs at least three frames with strictly increasing, finite source timestamps.")
-    if p.facing not in ("left", "right"):
+    if p.facing not in ("left", "right", "near"):
         raise ValueError("Set facing direction to left or right in the displayed image.")
     if not (t[0] <= p.takeoff < p.landing <= t[-1]):
         raise ValueError("Takeoff and landing must be ordered source times within the clip.")
@@ -46,7 +46,7 @@ def _point(frame, name):
     return np.array([p.x * frame.width, -p.y * frame.height]), q
 
 def _midpoint(frame, joint, threshold):
-    points = [p for side in ("left", "right") if (p := _point(frame, f"{side}_{joint}")) is not None]
+    points = [p for side in ("left", "right", "near") if (p := _point(frame, f"{side}_{joint}")) is not None]
     reliable = [p for p in points if p[1] >= threshold]
     use = reliable or points
     if not use:
@@ -67,8 +67,13 @@ def analyze(frames, params: AnalysisParameters, source_metadata=None) -> Analysi
     n = len(frames)
     flight = (t >= p.takeoff) & (t <= p.landing)
     flags = [{"manual_landmark:" + name for name in frame.manual_landmarks} for frame in frames]
+    for i, frame in enumerate(frames):
+        if frame.manual_pose_mode != "detected":
+            flags[i].add("manual_pose:" + frame.manual_pose_mode)
     warnings = ["Hip midpoint is a body-center proxy, not center of mass.",
                 "Assumed side view: camera tilt, perspective, and out-of-plane rotation affect these measurements."]
+    if any(f.manual_pose_mode == "rough_single_side" for f in frames):
+        warnings.append("Manual rough poses use a single near-side hip rather than a hip midpoint; transitions can affect height and velocity. Missing points are not inferred.")
     raw = np.full(n, np.nan)
     vertical = np.full(n, np.nan)
     torso = np.full(n, np.nan)
@@ -101,7 +106,7 @@ def analyze(frames, params: AnalysisParameters, source_metadata=None) -> Analysi
         if quality[i] < p.min_confidence:
             flags[i].add("low_torso_quality")
         metrics, angles, weights = [], [], []
-        for side in ("left", "right"):
+        for side in ("left", "right", "near"):
             triplet = [_point(frame, f"{side}_{joint}") for joint in ("shoulder", "hip", "knee")]
             if any(v is None for v in triplet):
                 continue
@@ -317,6 +322,6 @@ def analyze(frames, params: AnalysisParameters, source_metadata=None) -> Analysi
                            "vertical_axis": "upward pixels; negative source image y", "body_axis": "shoulder midpoint toward hip midpoint",
                            "rotation_sign": "backward positive; forward negative; facing is fixed for the clip",
                            "unwrapped_orientation": "segment-local after quality breaks; see orientation_segment",
-                           "pose_correction_applied": any(f.manual_landmarks for f in frames),
+                           "pose_correction_applied": any(f.manual_landmarks or f.manual_pose_mode != "detected" for f in frames),
                            "manual_landmarks_by_frame": {str(f.frame_index): list(f.manual_landmarks) for f in frames if f.manual_landmarks},
                            "manual_quality_policy": "User-placed XY has analysis weight 1; original detector confidence and Z are unchanged", "body_center_proxy": "visibility-weighted hip midpoint, not COM"})

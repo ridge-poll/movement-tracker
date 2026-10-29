@@ -2,7 +2,7 @@
 
 The current test suite covers the tracking/media foundation and the side-view measurement layer. See `PHASE2.md` for definitions and assumptions. The pre-cleanup experiment is preserved at Git tag `rotation-experiment-v1` (commit `227b9bb`).
 
-**Result: 50 tests passed on Python 3.11.15.** `git diff --check` is clean. No new runtime dependencies were added for analysis or plotting.
+**Result: 55 tests passed on Python 3.11.15.** `git diff --check` is clean. No new runtime dependencies were added for analysis or plotting.
 
 ## Synthetic and automated checks
 
@@ -72,3 +72,7 @@ Group editing validation: click/Shift-click selection, exact marquee selection,
 anatomical hand/foot selection and individual-point mode, selection-only clicks,
 frame-switch selection clearing, equal-displacement group movement with one undo,
 shape-preserving boundary clamping, and atomic rejection of invalid batch coordinates.
+
+Rough-pose checks cover clearing/reset/undo, dragging newly created points, absent detector poses rebuilt for kinematics, replacement provenance, guided Back/Skip/Cancel, navigation guards, and one undo entry per placement.
+
+Guided estimation: mocked-backend tests verify crop coordinate mapping, retained model confidence, omitted crop depth, undo/provenance, and no-detection failures. Native MediaPipe guided inference has not been validated on real footage in this sandbox.

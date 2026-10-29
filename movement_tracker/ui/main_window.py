@@ -18,13 +18,15 @@ from movement_tracker.export.csv_export import export_csv
 from movement_tracker.export.video_export import export_video
 
 from .pose_editor import VideoView
-from movement_tracker.pose_corrections import corrections_for
+from movement_tracker.pose_corrections import corrections_for, ROUGH_NAMES
+from movement_tracker.pose_data import Landmark
 from dataclasses import replace
 
 class MainWindow(QMainWindow):
     def __init__(self, model_path, camera_index=0):
         super().__init__()
         self.model_path = Path(model_path)
+        self.rough_draft = None
         self.clip = None
         self.job = None
         self.job_kind = None
@@ -90,7 +92,7 @@ class MainWindow(QMainWindow):
         self.edit_button.setCheckable(True)
         self.undo_button = QPushButton("Undo")
         self.reset_button = QPushButton("Reset Frame")
-        self.recalculate_button = QPushButton("Recalculate")
+        self.recalculate_button = QPushButton("Estimate Pose")
         self.landmark_choice = QComboBox()
         self.landmark_choice.addItem("Grab nearest landmark", None)
         for name in LANDMARK_NAMES:
@@ -100,7 +102,7 @@ class MainWindow(QMainWindow):
         self.edit_button.toggled.connect(self.edit_toggled)
         self.undo_button.clicked.connect(lambda: self.change_correction("undo"))
         self.reset_button.clicked.connect(lambda: self.change_correction("reset"))
-        self.recalculate_button.clicked.connect(self.recalculate)
+        self.recalculate_button.clicked.connect(self.estimate_pose)
         self.view.landmarks_moved.connect(self.move_landmarks)
         for widget in (self.edit_button, self.undo_button, self.reset_button, self.recalculate_button, self.landmark_choice):
             toggles.addWidget(widget)
@@ -114,6 +116,23 @@ class MainWindow(QMainWindow):
         selection_tools.addWidget(QLabel("White rings: selected · Shift-click: toggle point · Drag empty image: select area"))
         selection_tools.addStretch()
         layout.addLayout(selection_tools)
+        rough_tools = QHBoxLayout()
+        self.clear_pose_button = QPushButton("Clear Pose")
+        self.rough_pose_button = QPushButton("Place Rough Pose")
+        self.rough_back = QPushButton("Back")
+        self.rough_skip = QPushButton("Skip")
+        self.rough_cancel = QPushButton("Cancel Placement")
+        self.rough_prompt = QLabel("")
+        self.clear_pose_button.clicked.connect(lambda: self.change_correction("clear"))
+        self.rough_pose_button.clicked.connect(self.start_rough)
+        self.rough_back.clicked.connect(self.back_rough)
+        self.rough_skip.clicked.connect(lambda: self.advance_rough(None))
+        self.rough_cancel.clicked.connect(self.cancel_rough)
+        self.view.image_clicked.connect(lambda x, y: self.advance_rough((x, y)))
+        for widget in (self.clear_pose_button, self.rough_pose_button, self.rough_back,
+                       self.rough_skip, self.rough_cancel, self.rough_prompt):
+            rough_tools.addWidget(widget)
+        layout.addLayout(rough_tools)
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.valueChanged.connect(self.seek)
         layout.addWidget(self.slider)
@@ -168,9 +187,10 @@ class MainWindow(QMainWindow):
 
     def update_controls(self):
         idle = self.job is None and not self.closing
-        ready = idle and self.clip is not None
-        self.open_button.setEnabled(idle)
-        self.live_button.setEnabled(idle)
+        placing = self.rough_draft is not None
+        ready = idle and self.clip is not None and not placing
+        self.open_button.setEnabled(idle and not placing)
+        self.live_button.setEnabled(idle and not placing)
         self.camera_index.setEnabled(idle)
         self.stop_button.setEnabled(self.job is not None and not self.job.cancel.is_set())
         for widget in (self.play_button, self.pause_button, self.back_button, self.next_button,
@@ -178,12 +198,65 @@ class MainWindow(QMainWindow):
             widget.setEnabled(ready)
         for widget in (self.edit_button, self.recalculate_button, self.landmark_choice):
             widget.setEnabled(ready)
+        self.clear_pose_button.setEnabled(ready)
+        self.rough_pose_button.setEnabled(ready)
+        for widget in (self.rough_back, self.rough_skip, self.rough_cancel, self.rough_prompt):
+            widget.setVisible(placing)
+        self.rough_back.setEnabled(placing and self.rough_step > 0)
         store = corrections_for(self.clip) if self.clip else None
         frame = self.clip.frames[self.index].frame_index if self.clip else 0
         self.undo_button.setEnabled(bool(ready and store.history.get(frame)))
         self.reset_button.setEnabled(bool(ready and store.overrides.get(frame)))
         if self.analysis_panel is not None:
             self.analysis_panel.setEnabled(ready)
+
+    def start_rough(self):
+        if self.clip is None or self.job:
+            return
+        self.pause()
+        self.edit_button.setChecked(True)
+        self.rough_draft, self.rough_step = {}, 0
+        self.view.selection.clear()
+        self.refresh_rough()
+
+    def refresh_rough(self):
+        self.rough_prompt.setText(f"{self.rough_step+1}/5: click " +
+                                  ("head", "near shoulder", "near hip", "near knee", "near ankle")[self.rough_step])
+        rgb, raw = self.current
+        landmarks = {name: Landmark(*xy) for name, xy in self.rough_draft.items()}
+        self.view.set_frame(rgb, replace(raw, landmarks=landmarks, manual_landmarks=tuple(landmarks),
+                                        manual_pose_mode="rough_single_side"), self.options(), True)
+        self.view.placing = True
+        self.update_controls()
+
+    def advance_rough(self, xy):
+        if self.rough_draft is None:
+            return
+        if xy is not None:
+            self.rough_draft[ROUGH_NAMES[self.rough_step]] = xy
+        self.rough_step += 1
+        if self.rough_step == len(ROUGH_NAMES):
+            draft = self.rough_draft
+            self.rough_draft = None
+            self.view.placing = False
+            if draft:
+                corrections_for(self.clip).rough(self.clip.frames[self.index], draft)
+                self.correction_changed()
+            else:
+                self.redraw()
+        else:
+            self.refresh_rough()
+
+    def back_rough(self):
+        if self.rough_draft is not None and self.rough_step:
+            self.rough_step -= 1
+            self.rough_draft.pop(ROUGH_NAMES[self.rough_step], None)
+            self.refresh_rough()
+
+    def cancel_rough(self):
+        self.rough_draft = None
+        self.view.placing = False
+        self.redraw()
 
     def edit_toggled(self, enabled):
         self.pause()
@@ -222,6 +295,33 @@ class MainWindow(QMainWindow):
         self.redraw()
         self.update_controls()
         self.status.setText("Pose correction changed · Recalculate to refresh measurements, plots and events")
+
+    def estimate_pose(self):
+        if self.clip is None or self.job or self.rough_draft is not None:
+            return
+        raw = self.clip.frames[self.index]
+        store = corrections_for(self.clip)
+        effective = store.apply(raw)
+        anchors = {name: (p.x, p.y) for name, p in effective.landmarks.items() if name in ROUGH_NAMES}
+        if not anchors:
+            anchors = store.overrides.get(raw.frame_index, {}).get("__anchors__", {})
+        if not {"near_shoulder", "near_hip"} <= anchors.keys():
+            self.status.setText("Place Rough Pose first, including shoulder and hip, then click Estimate Pose.")
+            self.start_rough()
+            return
+        from movement_tracker.tracking.guided_estimate import estimate_pose
+        rgb = self.current[0].copy()
+        def work(job):
+            tracker = self.tracker()
+            try:
+                landmarks = estimate_pose(rgb, raw, anchors, tracker)
+                if job.cancel.is_set():
+                    from movement_tracker.video.processing import Cancelled
+                    raise Cancelled()
+                return raw, anchors, landmarks
+            finally:
+                tracker.close()
+        self.begin_job("estimate", work)
 
     def recalculate(self):
         self.open_analysis()
@@ -269,7 +369,7 @@ class MainWindow(QMainWindow):
         self.progress.setRange(0, 0)
         self.progress.setVisible(kind != "camera")
         self.status.setText({"process": "Analyzing every frame…", "camera": "Opening camera…",
-                             "video": "Exporting full-resolution silent MP4…", "csv": "Exporting landmarks…"}[kind])
+                             "video": "Exporting full-resolution silent MP4…", "csv": "Exporting landmarks…", "estimate": "Estimating pose from guided image crop…"}[kind])
         self.update_controls()
 
     def open_video(self):
@@ -303,7 +403,7 @@ class MainWindow(QMainWindow):
         self.pause() if self.playing else self.play()
 
     def play(self):
-        if self.clip is None or self.job:
+        if self.clip is None or self.job or self.rough_draft is not None:
             return
         if self.index >= len(self.clip.frames) - 1:
             self.show_frame(0)
@@ -313,12 +413,12 @@ class MainWindow(QMainWindow):
         self.playing = True
 
     def step(self, amount):
-        if self.clip and self.job is None:
+        if self.clip and self.job is None and self.rough_draft is None:
             self.pause()
             self.show_frame(max(0, min(len(self.clip.frames) - 1, self.index + amount)))
 
     def seek(self, index):
-        if self.clip and self.job is None:
+        if self.clip and self.job is None and self.rough_draft is None:
             self.pause()
             self.show_frame(index)
 
@@ -342,6 +442,9 @@ class MainWindow(QMainWindow):
     def redraw(self, *args):
         if self.current is None:
             return
+        if self.rough_draft is not None:
+            self.refresh_rough()
+            return
         rgb, pose = self.current
         if self.clip is not None and self.job_kind != "camera":
             pose = corrections_for(self.clip).apply(pose)
@@ -354,7 +457,7 @@ class MainWindow(QMainWindow):
                 value = getattr(point, field) if point else None
                 self.table.item(row, column).setText(f"{value:.3f}" if value is not None else "—")
         fps = 1 / pose.inference_seconds if pose.inference_seconds else 0
-        confidence = f"{pose.confidence:.3f}" if pose.confidence is not None else "no pose detected"
+        confidence = f"{pose.confidence:.3f}" if pose.confidence is not None else "N/A"
         source = "Live" if self.job_kind == "camera" and self.job else f"Source FPS: {self.clip.fps:.3f}" if self.clip else ""
         self.metrics.setText(f"Frame: {pose.frame_index}  |  Time: {pose.timestamp:.3f} s  |  {pose.width} × {pose.height}  |  {source}  |  Inference FPS: {fps:.1f}  |  Mean confidence: {confidence}")
 
@@ -410,6 +513,11 @@ class MainWindow(QMainWindow):
                         QMessageBox.warning(self, "Operation failed", job.error)
                 elif job.cancelled:
                     self.status.setText("Cancelled")
+                elif kind == "estimate":
+                    raw, anchors, landmarks = job.result
+                    corrections_for(self.clip).estimate(raw, landmarks, anchors)
+                    self.correction_changed()
+                    self.status.setText("Second image estimate ready · Review the pose; Undo restores your guide · Recalculate analysis in the plot panel")
                 elif kind == "process":
                     if self.clip:
                         self.clip.close()

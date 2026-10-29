@@ -28,7 +28,8 @@ class AnalysisPanel(QWidget):
         layout = QVBoxLayout(self)
         self.position = QLabel("Choose takeoff, landing, and facing direction.")
         self.position.setWordWrap(True)
-        layout.addWidget(self.position)
+        self.position.setFixedHeight(76)
+        self.position.setToolTip("Current frame diagnostics")
         self.tabs = QTabWidget()
         self.plots = []
         plot_page = QWidget()
@@ -124,6 +125,11 @@ class AnalysisPanel(QWidget):
         self.summary.setReadOnly(True)
         self.tabs.addTab(self.summary, "Summary & quality")
         layout.addWidget(self.tabs, 1)
+        diagnostics = QScrollArea()
+        diagnostics.setWidgetResizable(True)
+        diagnostics.setFixedHeight(86)
+        diagnostics.setWidget(self.position)
+        layout.addWidget(diagnostics)
         actions = QHBoxLayout()
         self.run_button = QPushButton("Analyze / Recalculate")
         self.run_button.clicked.connect(self.recalculate)
@@ -206,6 +212,8 @@ class AnalysisPanel(QWidget):
             quality = self.result.series["orientation_quality"][i]
             detail = f" · torso quality {quality:.2f}\n" + (", ".join(flags) if flags else "No quality flags on this frame")
         self.position.setText(f"Video frame {frame_index} · source time {time:.4f} s" + detail)
+        self.position.setToolTip(self.position.text())
+        self.position.setFixedHeight(max(76, self.position.heightForWidth(max(100, self.position.width()))))
         for plot in self.plots:
             plot.position = time
             plot.update()

@@ -171,3 +171,37 @@ Turn the checkbox off to start an individual selection, or use the exact landmar
 selector to isolate an overlapping point. Shift-click and marquee always operate on
 individual points, without expanding anatomical groups. Selection clears when changing
 frames or leaving editing; corrections remain stored for the loaded video.
+
+### Clearing and rebuilding a missing pose
+
+**Clear Pose** suppresses the current frame's detection without deleting it.
+**Place Rough Pose** replaces that frame with a guided sequence: head, near shoulder,
+near hip, near knee, near ankle. Click the same visible side consistently. Back revisits
+the previous point; Skip leaves an obscured point absent; Cancel Placement restores the
+pre-placement state. Skipping all five points makes no change. Frame navigation is
+paused during placement. Completing the sequence is one Undo step.
+
+The placed purple points remain draggable, including when the original frame had no
+pose. Reset Frame restores the original detection; Undo reverses clear, placement,
+or dragging. Recalculate refreshes the analysis. Shoulder/hip support orientation,
+shoulder/hip/knee support tuck, and hip supports the height proxy. Missing quantities
+remain unavailable. Rough poses use a single near-side hip, not a two-hip midpoint;
+transitions between these proxies can affect measured height and velocity. No hidden
+side, depth, or model confidence is invented. CSV flags and JSON provenance record
+cleared and rough-pose frames and all manually supplied coordinates.
+
+### Guided second image estimate
+
+After placing a rough pose, click **Estimate Pose** in the video editor. The anchors
+guide a padded crop and shoulder-to-hip upright rotation of the current preview image;
+MediaPipe runs again on that image and maps its landmarks back to video coordinates.
+This is crop-guided inference, not a landmark-conditioned model: the returned points
+are not constrained to pass through your clicks and may still be wrong. Shoulder and
+hip are required; additional guides help define the crop. Review the result and use
+Undo to recover the rough pose. Failed or cancelled inference leaves edits unchanged.
+The second estimate retains model confidence, has no inferred source-image depth, and
+is recorded with its guide anchors in export provenance. To refresh kinematics, use
+**Analyze / Recalculate** in the plot panel.
+
+Frame diagnostics sit below the plots in a fixed-height scrolling area. Hover for the
+full diagnostic text. Missing mean confidence is displayed as N/A.
